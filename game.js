@@ -314,8 +314,8 @@ export class NameThatArtistGame {
         // Calculate score if correct
         if (isCorrect) {
             const timeElapsed = (Date.now() - currentRound.startTime) / 1000;
-            const timeRemaining = Math.max(0, config.game.roundTimeSeconds - timeElapsed);
-            const score = Math.round(config.game.baseScore * (timeRemaining / config.game.roundTimeSeconds));
+            const timeRemaining = Math.max(0, session.roundTimeSeconds - timeElapsed);
+            const score = Math.round(config.game.baseScore * (timeRemaining / session.roundTimeSeconds));
 
             player.score += score;
             player.correctAnswers++;
@@ -476,13 +476,13 @@ export class NameThatArtistGame {
      */
     isRoundTimeExpired(channelId) {
         const session = this.activeSessions.get(channelId);
-        if (!session) return false;
+        if (!session) return true;
 
         const currentRound = session.rounds[session.currentRound];
         if (!currentRound.startTime) return false;
 
         const elapsed = (Date.now() - currentRound.startTime) / 1000;
-        return elapsed >= config.game.roundTimeSeconds;
+        return elapsed >= session.roundTimeSeconds;
     }
 
     /**

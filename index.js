@@ -69,6 +69,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const [action, channelId, choice] = interaction.customId.split("_");
 
         if (action === "answer") {
+            // Validate this is the current round's message to prevent old button clicks
+            const session = gameManager.getSession(channelId);
+            if (session && session.messageId && interaction.message.id !== session.messageId) {
+                await interaction.reply({
+                    content: "⚠️ This round has ended. Please answer the current round!",
+                    ephemeral: true,
+                });
+                return;
+            }
+
             const result = await gameManager.processAnswer(
                 channelId,
                 interaction.user.id,
