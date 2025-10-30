@@ -365,9 +365,8 @@ export class NameThatArtistGame {
             };
         }
 
-        // Start timing for the new round
+        // Don't set startTime here - it will be set in getCurrentRound() when the round is actually displayed
         const currentRound = session.rounds[session.currentRound];
-        currentRound.startTime = Date.now();
 
         return {
             success: true,

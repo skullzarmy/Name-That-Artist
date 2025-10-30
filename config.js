@@ -30,6 +30,7 @@ export const config = {
     game: {
         roundsPerGame: 20, // Number of rounds in a game (default)
         roundTimeSeconds: 15, // Time per round in seconds
+        delayBetweenRounds: 5, // Delay between rounds in seconds
         multipleChoiceCount: 4, // Number of answer choices (1 correct + 3 wrong)
         baseScore: 100, // Base score per correct answer
         minPlayers: 1, // Minimum players to start
