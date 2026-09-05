@@ -22,7 +22,7 @@ A Discord trivia bot that challenges players to identify artists behind NFTs fro
 
 ### Prerequisites
 
-- Node.js 18.x or higher (or Bun)
+- Node.js 20.x or higher (22.x/24.x LTS recommended — 18.x has reached end-of-life) or Bun
 - A Discord Bot Token ([Create one here](https://discord.com/developers/applications))
 
 ### Installation
@@ -83,6 +83,8 @@ Or for development (auto-restart on changes):
 npm run dev
 ```
 
+For running the bot long-term on a Linux host (e.g. in a `screen` session), see the "Running in Production" section in [SETUP.md](./SETUP.md).
+
 ## 🎮 Commands
 
 - `/namethatartist` - Start a new game (10 rounds of trivia)
@@ -99,6 +101,8 @@ npm run dev
 - `/stopgame` - Stop the current game (starter or moderator only)
 - `/ping` - Check if the bot is responsive
 - `/help` - Get help and information about the game
+- `/precache` - Pre-load all game images into Discord's cache (Admin only)
+- `/ignorelist add|remove|list` - Manage NFT contracts excluded from game selection, with fuzzy name search (Admin only)
 
 ## 🛡️ Anti-Spam & Moderation
 
@@ -122,6 +126,10 @@ Users with **Administrator** or **Manage Messages** permissions can:
 - Stop any active game in their channels
 - Help moderate game sessions
 
+Users with **Administrator** permission can additionally:
+- Pre-cache all game images with `/precache`
+- Curate which NFT contracts are eligible for gameplay with `/ignorelist` — useful for excluding non-art collectible drops (sports cards, etc.) that don't fit the "name the artist" premise
+
 Cooldown settings can be customized in `config.js` under the `cooldowns` section.
 
 ## 🏗️ Project Structure
@@ -139,7 +147,8 @@ Name-That-Artist/
 ├── data/                 # Auto-generated data files (gitignored)
 │   ├── tokens.json       # Cached NFT tokens
 │   ├── players.json      # Player statistics
-│   └── game_state.json   # Active game sessions
+│   ├── game_state.json   # Active game sessions
+│   └── ignored_contracts.json  # Admin-managed contract ignore list
 ├── package.json          # Project dependencies
 ├── .env.example          # Example environment variables
 └── README.md            # This file
@@ -212,6 +221,8 @@ bun run index.js
 1. Add command definition in `deploy-commands.js`
 2. Add command handler in `index.js` under the `InteractionCreate` event
 3. Run `npm run deploy-commands` to register the new command
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md#adding-new-commands) for a walkthrough, including how to add subcommands and autocomplete (as used by `/ignorelist`).
 
 ## 🤝 Contributing
 

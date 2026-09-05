@@ -208,7 +208,7 @@ export class CompactionScheduler {
      * Start the scheduler
      * @param {Array<string>} logNames - Names of logs to monitor
      */
-    start(logNames = ['players', 'tokens', 'game_state']) {
+    start(logNames = ['players', 'tokens', 'game_state', 'ignored_contracts']) {
         if (this.isRunning) return;
         
         this.isRunning = true;

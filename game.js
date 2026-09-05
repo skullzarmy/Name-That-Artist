@@ -5,13 +5,14 @@
  */
 
 import { config } from "./config.js";
-import { loadTokens, needsTokenRefresh } from "./services/storage.js";
+import { loadTokens, needsTokenRefresh, getIgnoredContracts } from "./services/storage.js";
 import {
     fetchAllTokens,
     normalizeToken,
     getUniqueArtists,
     getDistractors,
     batchResolveArtistNames,
+    buildContractCatalog,
 } from "./services/objkt-api.js";
 
 /**
@@ -22,10 +23,55 @@ export class NameThatArtistGame {
         this.activeSessions = new Map();
         this.tokens = [];
         this.artists = [];
+        this.allTokens = []; // Full candidate pool, before the ignore-list filter
+        this.allArtists = [];
+        this.contractCatalog = []; // [{contract, label, count}] built from allTokens
+        this.ignoredContracts = new Set();
         this.artistInfo = {}; // Map of address -> artist info (alias, tzdomain, etc.)
         this.isInitialized = false;
         this.initializationPromise = null; // Track ongoing initialization
         this.refreshPromise = null; // Track background refresh
+    }
+
+    /**
+     * Load the ignore-list from storage into memory
+     */
+    async loadIgnoredContracts() {
+        const ignored = await getIgnoredContracts();
+        this.ignoredContracts = new Set(Object.keys(ignored));
+    }
+
+    /**
+     * Derive this.tokens/this.artists from this.allTokens by removing ignored contracts.
+     * A no-op passthrough when nothing is ignored, so existing behavior is unaffected
+     * when the feature isn't in use.
+     */
+    _applyIgnoreFilter() {
+        if (this.ignoredContracts.size === 0) {
+            this.tokens = this.allTokens;
+            this.artists = this.allArtists;
+            return;
+        }
+
+        this.tokens = this.allTokens.filter((token) => !this.ignoredContracts.has(token.contract));
+        this.artists = getUniqueArtists(this.tokens);
+    }
+
+    /**
+     * Reload the ignore-list and reapply it against the already-loaded token pool.
+     * Called by the admin /ignorelist command so changes take effect instantly,
+     * without refetching from objkt.com.
+     * @returns {Promise<{activeTokens: number, totalCandidates: number, ignoredCount: number}>}
+     */
+    async applyIgnoreListChange() {
+        await this.loadIgnoredContracts();
+        this._applyIgnoreFilter();
+
+        return {
+            activeTokens: this.tokens.length,
+            totalCandidates: this.allTokens.length,
+            ignoredCount: this.ignoredContracts.size,
+        };
     }
 
     /**
@@ -51,21 +97,25 @@ export class NameThatArtistGame {
                 const data = await loadTokens();
 
                 if (data && data.tokens && data.tokens.length > 0) {
-                    this.tokens = data.tokens;
+                    this.allTokens = data.tokens;
                     this.artistInfo = data.artistInfo || {};
 
                     // Filter artists based on config
-                    const allArtists = getUniqueArtists(this.tokens);
+                    const allArtists = getUniqueArtists(this.allTokens);
                     if (config.game.excludeUnresolvedArtists) {
-                        this.artists = allArtists.filter((address) => this.artistInfo[address]?.hasResolution);
-                        this.tokens = this.tokens.filter(
+                        this.allArtists = allArtists.filter((address) => this.artistInfo[address]?.hasResolution);
+                        this.allTokens = this.allTokens.filter(
                             (token) => this.artistInfo[token.primaryArtist]?.hasResolution
                         );
-                        console.log(`   Filtered to ${this.artists.length} artists with alias/domain`);
-                        console.log(`   Filtered to ${this.tokens.length} tokens with resolved artists`);
+                        console.log(`   Filtered to ${this.allArtists.length} artists with alias/domain`);
+                        console.log(`   Filtered to ${this.allTokens.length} tokens with resolved artists`);
                     } else {
-                        this.artists = allArtists;
+                        this.allArtists = allArtists;
                     }
+
+                    this.contractCatalog = buildContractCatalog(this.allTokens);
+                    await this.loadIgnoredContracts();
+                    this._applyIgnoreFilter();
 
                     console.log(
                         `✅ Game initialized with ${this.tokens.length} tokens and ${this.artists.length} unique artists`
@@ -104,10 +154,10 @@ export class NameThatArtistGame {
         this.refreshPromise = (async () => {
             try {
                 const rawTokens = await fetchAllTokens();
-                this.tokens = rawTokens.map(normalizeToken).filter((t) => t.imageUrl);
+                this.allTokens = rawTokens.map(normalizeToken).filter((t) => t.imageUrl);
 
                 // Extract unique artists
-                const allArtists = getUniqueArtists(this.tokens);
+                const allArtists = getUniqueArtists(this.allTokens);
 
                 // Resolve artist names (alias/tzdomain)
                 console.log("🔍 Resolving artist information...");
@@ -115,17 +165,23 @@ export class NameThatArtistGame {
 
                 // Filter artists based on config
                 if (config.game.excludeUnresolvedArtists) {
-                    this.artists = allArtists.filter((address) => this.artistInfo[address]?.hasResolution);
-                    this.tokens = this.tokens.filter((token) => this.artistInfo[token.primaryArtist]?.hasResolution);
-                    console.log(`   Filtered to ${this.artists.length} artists with alias/domain`);
-                    console.log(`   Filtered to ${this.tokens.length} tokens with resolved artists`);
+                    this.allArtists = allArtists.filter((address) => this.artistInfo[address]?.hasResolution);
+                    this.allTokens = this.allTokens.filter(
+                        (token) => this.artistInfo[token.primaryArtist]?.hasResolution
+                    );
+                    console.log(`   Filtered to ${this.allArtists.length} artists with alias/domain`);
+                    console.log(`   Filtered to ${this.allTokens.length} tokens with resolved artists`);
                 } else {
-                    this.artists = allArtists;
+                    this.allArtists = allArtists;
                 }
+
+                this.contractCatalog = buildContractCatalog(this.allTokens);
+                await this.loadIgnoredContracts();
+                this._applyIgnoreFilter();
 
                 // Save to cache with artist info
                 const { saveTokens } = await import("./services/storage.js");
-                await saveTokens(this.tokens, this.artistInfo);
+                await saveTokens(this.allTokens, this.artistInfo);
 
                 console.log(
                     `✅ Data refreshed: ${this.tokens.length} tokens and ${this.artists.length} unique artists`

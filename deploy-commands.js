@@ -108,6 +108,45 @@ const commands = [
         name: "precache",
         description: "Pre-load all game images into Discord's cache (Admin only)",
     },
+    {
+        name: "ignorelist",
+        description: "Manage NFT contracts excluded from game selection (Admin only)",
+        options: [
+            {
+                name: "add",
+                description: "Add a contract to the ignore list",
+                type: 1, // SUB_COMMAND
+                options: [
+                    {
+                        name: "contract",
+                        description: "Search by collection name or paste a KT1 contract address",
+                        type: 3, // STRING
+                        required: true,
+                        autocomplete: true,
+                    },
+                ],
+            },
+            {
+                name: "remove",
+                description: "Remove a contract from the ignore list",
+                type: 1, // SUB_COMMAND
+                options: [
+                    {
+                        name: "contract",
+                        description: "Search currently ignored contracts by name or address",
+                        type: 3, // STRING
+                        required: true,
+                        autocomplete: true,
+                    },
+                ],
+            },
+            {
+                name: "list",
+                description: "View all currently ignored contracts",
+                type: 1, // SUB_COMMAND
+            },
+        ],
+    },
 ];
 
 // Create REST instance

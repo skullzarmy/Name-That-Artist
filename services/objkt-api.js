@@ -216,6 +216,33 @@ export function getUniqueArtists(tokens) {
 }
 
 /**
+ * Build a catalog of distinct contracts present in a token list, for admin
+ * search/autocomplete (e.g. the ignore-list feature)
+ * @param {Array} tokens - Array of normalized tokens
+ * @returns {Array<{contract: string, label: string, count: number}>}
+ */
+export function buildContractCatalog(tokens) {
+    const catalog = new Map();
+
+    tokens.forEach((token) => {
+        if (!token.contract) return;
+
+        const existing = catalog.get(token.contract);
+        if (existing) {
+            existing.count++;
+        } else {
+            catalog.set(token.contract, {
+                contract: token.contract,
+                label: token.name || token.contract,
+                count: 1,
+            });
+        }
+    });
+
+    return Array.from(catalog.values());
+}
+
+/**
  * Fetch artist info (alias, tzdomain) for a wallet address
  * @param {string} address - Tezos wallet address
  * @returns {Promise<Object|null>} Artist info or null

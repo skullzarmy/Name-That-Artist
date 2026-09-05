@@ -17,6 +17,7 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const TOKENS_FILE = path.join(DATA_DIR, "tokens.json");
 const PLAYERS_FILE = path.join(DATA_DIR, "players.json");
 const GAME_STATE_FILE = path.join(DATA_DIR, "game_state.json");
+const IGNORED_CONTRACTS_FILE = path.join(DATA_DIR, "ignored_contracts.json");
 
 /**
  * Ensure data directory exists
@@ -368,13 +369,74 @@ export async function getAllGameStates() {
 }
 
 /**
+ * Add a contract to the ignore list (excluded from game token selection)
+ * @param {string} contract - FA contract address (KT1...)
+ * @param {string} addedBy - Discord user ID of the admin who added it
+ * @param {string} label - Human-readable label (e.g. a sample token name) for display
+ * @returns {Promise<Object>} The stored entry
+ */
+export async function addIgnoredContract(contract, addedBy, label) {
+    const allIgnored = await readJSON(IGNORED_CONTRACTS_FILE, {});
+    const entry = {
+        addedBy,
+        addedAt: new Date().toISOString(),
+        label: label || contract,
+    };
+    allIgnored[contract] = entry;
+
+    await appendLogEntry("ignored_contracts", {
+        op: OpType.SET,
+        key: contract,
+        value: entry,
+    });
+
+    await writeJSON(IGNORED_CONTRACTS_FILE, allIgnored);
+    return entry;
+}
+
+/**
+ * Remove a contract from the ignore list
+ * @param {string} contract - FA contract address (KT1...)
+ */
+export async function removeIgnoredContract(contract) {
+    const allIgnored = await readJSON(IGNORED_CONTRACTS_FILE, {});
+    delete allIgnored[contract];
+
+    await appendLogEntry("ignored_contracts", {
+        op: OpType.DELETE,
+        key: contract,
+    });
+
+    await writeJSON(IGNORED_CONTRACTS_FILE, allIgnored);
+}
+
+/**
+ * Get all ignored contracts, with fallback to append log rebuild
+ * @returns {Promise<Object>} Map of contract -> {addedBy, addedAt, label}
+ */
+export async function getIgnoredContracts() {
+    const data = await readJSON(IGNORED_CONTRACTS_FILE, null);
+
+    if (data === null) {
+        try {
+            return await rebuildStateFromLog("ignored_contracts");
+        } catch (error) {
+            console.error("Failed to rebuild ignored_contracts from log:", error);
+        }
+        return {};
+    }
+
+    return data;
+}
+
+/**
  * Manually trigger compaction for all logs
  * Can be called periodically or when needed
  */
 export async function compactAllLogs() {
     console.log("🗜️ Starting manual compaction of all logs...");
 
-    const logs = ["players", "tokens", "game_state"];
+    const logs = ["players", "tokens", "game_state", "ignored_contracts"];
     for (const logName of logs) {
         try {
             await compactLog(logName);

@@ -9,7 +9,13 @@ import {
 } from "discord.js";
 import { config, validateConfig } from "./config.js";
 import { gameManager } from "./game.js";
-import { getLeaderboard, getPlayerStats } from "./services/storage.js";
+import {
+    getLeaderboard,
+    getPlayerStats,
+    addIgnoredContract,
+    removeIgnoredContract,
+    getIgnoredContracts,
+} from "./services/storage.js";
 import { cooldownManager } from "./services/cooldown.js";
 import { CompactionScheduler } from "./services/append-log.js";
 
@@ -54,7 +60,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 
     // Start background compaction scheduler
     console.log("\n🗜️ Starting background compaction scheduler...");
-    compactionScheduler.start(["players", "tokens", "game_state"]);
+    compactionScheduler.start(["players", "tokens", "game_state", "ignored_contracts"]);
 });
 
 // Handle errors
@@ -111,11 +117,86 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
     }
 
+    // Handle slash command autocomplete
+    if (interaction.isAutocomplete()) {
+        await handleAutocomplete(interaction);
+        return;
+    }
+
     // Handle slash commands
     if (!interaction.isChatInputCommand()) return;
 
     await handleSlashCommand(interaction);
 });
+
+const CONTRACT_PATTERN = /^KT1[a-zA-Z0-9]{33}$/;
+
+/**
+ * Score how well a query fuzzy-matches a label/contract pair.
+ * Prefix/substring matches rank highest; a subsequence match (characters of
+ * the query appear in order, not necessarily contiguous) gives basic
+ * typo-tolerant fuzzy matching. Returns null when there's no match at all.
+ */
+function fuzzyScore(query, label, contract) {
+    if (!query) return 0;
+
+    const lowerLabel = label.toLowerCase();
+    const lowerContract = contract.toLowerCase();
+
+    if (lowerLabel.startsWith(query) || lowerContract.startsWith(query)) return 100;
+    if (lowerLabel.includes(query) || lowerContract.includes(query)) return 50;
+    if (isSubsequence(query, lowerLabel)) return 10;
+
+    return null;
+}
+
+function isSubsequence(needle, haystack) {
+    let i = 0;
+    for (const char of haystack) {
+        if (char === needle[i]) i++;
+        if (i === needle.length) return true;
+    }
+    return needle.length === 0;
+}
+
+/**
+ * Handle autocomplete requests for slash command options
+ */
+async function handleAutocomplete(interaction) {
+    if (interaction.commandName !== "ignorelist") return;
+
+    const subcommand = interaction.options.getSubcommand();
+    const focused = interaction.options.getFocused(true);
+    const query = (focused.value || "").trim().toLowerCase();
+
+    let candidates = [];
+
+    if (subcommand === "add") {
+        candidates = gameManager.contractCatalog;
+    } else if (subcommand === "remove") {
+        const ignored = await getIgnoredContracts();
+        candidates = Object.entries(ignored).map(([contract, entry]) => ({
+            contract,
+            label: entry.label || contract,
+            count: undefined,
+        }));
+    }
+
+    const matches = candidates
+        .map((c) => ({ ...c, score: fuzzyScore(query, c.label, c.contract) }))
+        .filter((c) => c.score !== null)
+        .sort((a, b) => b.score - a.score || (b.count || 0) - (a.count || 0))
+        .slice(0, 25);
+
+    await interaction.respond(
+        matches.map((c) => ({
+            name: `${c.label}${c.count ? ` (${c.count} tokens)` : ""} — ${c.contract.slice(0, 4)}…${c.contract.slice(
+                -4
+            )}`.slice(0, 100),
+            value: c.contract,
+        }))
+    );
+}
 
 /**
  * Handle slash commands
@@ -520,6 +601,88 @@ async function handleSlashCommand(interaction) {
             });
         }
         return;
+    }
+
+    // Ignore-list command (Admin only)
+    if (commandName === "ignorelist") {
+        if (!interaction.memberPermissions?.has("Administrator")) {
+            await interaction.reply({
+                content: "⚠️ This command requires Administrator permissions.",
+                ephemeral: true,
+            });
+            return;
+        }
+
+        const subcommand = interaction.options.getSubcommand();
+
+        if (subcommand === "add") {
+            const contract = interaction.options.getString("contract").trim();
+
+            if (!CONTRACT_PATTERN.test(contract)) {
+                await interaction.reply({
+                    content: `⚠️ \`${contract}\` doesn't look like a valid Tezos contract address (expected format: \`KT1...\`).`,
+                    ephemeral: true,
+                });
+                return;
+            }
+
+            await interaction.deferReply({ ephemeral: true });
+
+            const catalogEntry = gameManager.contractCatalog.find((c) => c.contract === contract);
+            const label = catalogEntry?.label || contract;
+
+            await addIgnoredContract(contract, interaction.user.id, label);
+            const stats = await gameManager.applyIgnoreListChange();
+
+            await interaction.editReply({
+                content: `✅ Now ignoring **${label}** (\`${contract}\`).\n${stats.activeTokens}/${stats.totalCandidates} tokens remain in rotation (${stats.ignoredCount} contract(s) ignored).`,
+            });
+            return;
+        }
+
+        if (subcommand === "remove") {
+            const contract = interaction.options.getString("contract").trim();
+
+            await interaction.deferReply({ ephemeral: true });
+
+            await removeIgnoredContract(contract);
+            const stats = await gameManager.applyIgnoreListChange();
+
+            await interaction.editReply({
+                content: `✅ Removed \`${contract}\` from the ignore list.\n${stats.activeTokens}/${stats.totalCandidates} tokens now in rotation (${stats.ignoredCount} contract(s) still ignored).`,
+            });
+            return;
+        }
+
+        if (subcommand === "list") {
+            await interaction.deferReply({ ephemeral: true });
+
+            const ignored = await getIgnoredContracts();
+            const entries = Object.entries(ignored);
+
+            if (entries.length === 0) {
+                await interaction.editReply({ content: "No contracts are currently ignored." });
+                return;
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle("🚫 Ignored Contracts")
+                .setColor(config.branding.color)
+                .setDescription(
+                    entries
+                        .map(
+                            ([contract, entry]) =>
+                                `**${entry.label || contract}**\n\`${contract}\`\nAdded by <@${entry.addedBy}> on ${new Date(
+                                    entry.addedAt
+                                ).toLocaleDateString()}`
+                        )
+                        .join("\n\n")
+                )
+                .setFooter({ text: config.branding.name });
+
+            await interaction.editReply({ embeds: [embed] });
+            return;
+        }
     }
 }
 

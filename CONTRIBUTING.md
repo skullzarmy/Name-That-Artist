@@ -58,6 +58,38 @@ Name-That-Artist/
    npm run deploy-commands
    ```
 
+For a set of related actions (e.g. add/remove/list), use subcommands instead of separate top-level commands — see `ignorelist` in `deploy-commands.js` for a working example:
+
+```javascript
+{
+    name: 'mycommand',
+    description: 'Description of what the command does',
+    options: [
+        {
+            name: 'add',
+            description: 'Add something',
+            type: 1, // SUB_COMMAND
+            options: [
+                { name: 'value', description: '...', type: 3, required: true }, // STRING
+            ],
+        },
+        { name: 'list', description: 'List everything', type: 1 },
+    ],
+}
+```
+
+Route it in `index.js` with `interaction.options.getSubcommand()`:
+
+```javascript
+if (commandName === 'mycommand') {
+    const subcommand = interaction.options.getSubcommand();
+    if (subcommand === 'add') { /* ... */ }
+    if (subcommand === 'list') { /* ... */ }
+}
+```
+
+If an option should offer live suggestions as the admin types (`autocomplete: true` on the option), handle it in `handleAutocomplete()` in `index.js`, which is routed separately via `interaction.isAutocomplete()`.
+
 ### Adding Game Features
 
 Game logic lives in `game.js`. The `NameThatArtistGame` class manages:

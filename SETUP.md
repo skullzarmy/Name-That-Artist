@@ -5,7 +5,7 @@ This guide will help you set up and run the Name That Artist Discord bot for The
 ## Prerequisites
 
 Before you begin, make sure you have:
-- Node.js 18.x or higher installed
+- Node.js 20.x or higher installed (22.x/24.x LTS recommended — 18.x has reached end-of-life)
 - A Discord account
 - Access to the [Discord Developer Portal](https://discord.com/developers/applications)
 
@@ -132,6 +132,7 @@ The bot stores data locally in JSON files:
 - `data/tokens.json` - Cached NFT tokens from the wallet
 - `data/players.json` - Player statistics and history
 - `data/game_state.json` - Active game sessions (for recovery)
+- `data/ignored_contracts.json` - Admin-managed list of NFT contracts excluded from game selection (via `/ignorelist`)
 
 These files are automatically created and updated by the bot.
 
@@ -155,6 +156,49 @@ bun run index.js
 ```
 
 Bun provides faster startup times and is fully compatible with this project.
+
+## Running in Production
+
+The bot has no built-in daemonization — it's a single long-running Node process (`npm start`). On a Linux host, the simplest way to keep it running after you log out is a `screen` session:
+
+```bash
+# Start a named session and run the bot inside it
+screen -S name-that-artist
+cd /path/to/Name-That-Artist
+npm start
+
+# Detach without stopping the bot: press Ctrl+A, then D
+
+# Reattach later to view logs or stop it
+screen -r name-that-artist
+```
+
+Only run **one** instance of the bot against a given `data/` directory at a time — the append-only log storage (see [PROGRESSIVE_STORAGE.md](./PROGRESSIVE_STORAGE.md)) isn't safe for concurrent writers.
+
+`screen` won't restart the bot automatically if it crashes or the host reboots. If you want that, a minimal `systemd` unit is a lightweight opt-in alternative to `screen`:
+
+```ini
+# /etc/systemd/system/name-that-artist.service
+[Unit]
+Description=Name That Artist Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/Name-That-Artist
+ExecStart=/usr/bin/node index.js
+Restart=on-failure
+User=your-linux-user
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now name-that-artist
+journalctl -u name-that-artist -f   # view logs
+```
 
 ## Troubleshooting
 
