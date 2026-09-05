@@ -4,6 +4,9 @@
   "description": "Discord game for The Tezos Community - Name That Artist",
   "main": "index.js",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
@@ -25,10 +28,9 @@
   "author": "The Tezos Community",
   "license": "MIT",
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5",
-    "graphql-request": "^6.1.0",
-    "node-fetch": "^3.3.2",
-    "rate-keeper": "^1.2.3"
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
+    "graphql-request": "^7.4.0",
+    "rate-keeper": "^1.2.4"
   }
 }
